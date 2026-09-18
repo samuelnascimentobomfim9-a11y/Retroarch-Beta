@@ -1,0 +1,155 @@
+name: Monitorar e Criar Releases com Tags Incrementais
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Verifica o GitHub oficial a cada 6 horas
+  workflow_dispatch: # Permite que você force o teste clicando em um botão
+
+jobs:
+  check-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão para criar as Tags e Releases
+      discussions: write
+
+    steps:
+      - name: Obter dados do RetroArch Oficial e Formatar Datas
+        id: retro_data
+        uses: actions/github-script@v7
+        with:
+          script: |
+            function formatarData(dateString) {
+              const d = dateString ? new Date(dateString) : new Date();
+              const dia = String(d.getUTCDate()).padStart(2, '0');
+              const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+              const ano = String(d.getUTCFullYear()).slice(-2); // Pega os últimos 2 dígitos do ano (ex: 26)
+              return `${dia}-${mes}-${ano}`;
+            }
+
+            const dataHoje = formatarData();
+            core.setOutput('hoje_hifen', dataHoje);
+
+            try {
+              const response = await github.rest.repos.getLatestRelease({
+                owner: 'libretro',
+                repo: 'RetroArch'
+              });
+              
+              const release = response.data;
+              core.setOutput('stable_version', release.tag_name);
+              core.setOutput('stable_url', release.html_url);
+              
+              const dataStable = formatarData(release.published_at);
+              core.setOutput('stable_hifen', dataStable);
+            } catch (error) {
+              console.log("Erro ao buscar a release oficial: " + error.message);
+            }
+
+      - name: Processar Versão Estável (Stable)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const stableVersion = "\${{ steps.retro_data.outputs.stable_version }}";
+            const stableHifen = "\${{ steps.retro_data.outputs.stable_hifen }}";
+            const stableUrl = "\${{ steps.retro_data.outputs.stable_url }}";
+            
+            if (!stableVersion) return;
+
+            // Formato idêntico para Tag e Título: DD-MM-AA_Stable_vX.X.X
+            const tagName = `${stableHifen}_Stable_${stableVersion}`;
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName
+              });
+              console.log(`A tag estável ${tagName} já existe.`);
+            } catch (error) {
+              console.log(`Nova versão Estável detectada! Criando Tag/Release: ${tagName}`);
+              
+              const bodyText = `🤖 **Nova Versão Estável do RetroArch Lançada!**\n\n` +
+                               `📦 **Versão Base:** ${stableVersion}\n` +
+                               `📅 **Data de Publicação:** ${stableHifen.replace(/-/g, '/')}\n` +
+                               `🔗 [Ver notas originais de desenvolvimento](${stableUrl})\n\n` +
+                               `--- \n\n` +
+                               `📥 **Links Oficiais para Download:**\n\n` +
+                               `🌐 [Site Oficial do RetroArch](https://retroarch.com)\n` +
+                               `📱 [Baixar na Google Play Store](https://google.com)\n\n` +
+                               `*Release e Tag geradas automaticamente via GitHub Actions.*`;
+
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tagName,
+                name: tagName,
+                body: bodyText,
+                draft: false,
+                prerelease: false
+              });
+            }
+
+      - name: Processar Versão Diária (Beta/Nightly) com Contador
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const hojeHifen = "\${{ steps.retro_data.outputs.hoje_hifen }}";
+            
+            // 1. Buscar todas as tags recentes do seu repositório para checar o contador
+            const tagsResponse = await github.rest.repos.listTags({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            const tagsExistentes = tagsResponse.data.map(t => t.name);
+            
+            // 2. Filtrar as tags de hoje que começam com o formato "DD-MM-AA_Beta_"
+            const prefixoHoje = `${hojeHifen}_Beta_`;
+            const tagsDeHoje = tagsExistentes.filter(name => name.startsWith(prefixoHoje));
+            
+            let proximoNumero = 1;
+            
+            if (tagsDeHoje.length > 0) {
+              // Extrai os números finais das tags de hoje e descobre o maior
+              const numeros = tagsDeHoje.map(name => {
+                const partes = name.split('_Beta_');
+                return parseInt(partes[1]) || 0;
+              });
+              const maiorNumero = Math.max(...numeros);
+              
+              // Se você quer que o bot pare se não houver atualização real, o ideal é rodar por workflow_dispatch.
+              // Como o buildbot do Retroarch atualiza de madrugada, assumimos que se o bot rodar e já existir a _Beta_1, 
+              // ele só criará a _Beta_2 se você disparar manualmente ou se preferir gerar múltiplos registros por dia.
+              // Para evitar criar repetidos idênticos de 6 em 6 horas no automático, vamos bloquear se já existir a de hoje.
+              
+              if (context.eventName === 'schedule') {
+                console.log(`A compilação Beta de hoje (${prefixoHoje}${maiorNumero}) já foi registrada. Pulando checagem automática.`);
+                return;
+              }
+              
+              proximoNumero = maiorNumero + 1;
+            }
+
+            const tagName = `${prefixoHoje}${proximoNumero}`;
+            console.log(`Criando compilação Beta: ${tagName}`);
+            
+            const bodyText = `🤖 **Atualização Detectada (Nightly / Beta)**\n\n` +
+                             `📅 **Compilação:** ${hojeHifen.replace(/-/g, '/')}\n` +
+                             `🔢 **Sequência do dia:** #${proximoNumero}\n\n` +
+                             `⚠️ *Nota: Versões Beta/Nightly trazem os recursos mais recentes diretamente do código fonte, mas podem conter instabilidades.*\n\n` +
+                             `--- \n\n` +
+                             `📥 **Links Oficiais para Download:**\n\n` +
+                             `🌐 [Página de Downloads Alternativos (Buildbot)](https://libretro.com)\n` +
+                             `📱 [Baixar na Google Play Store](https://google.com)\n\n` +
+                             `*Release marcada como Pre-release e gerada via GitHub Actions.*`;
+
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              name: tagName,
+              body: bodyText,
+              draft: false,
+              prerelease: true
+            });
