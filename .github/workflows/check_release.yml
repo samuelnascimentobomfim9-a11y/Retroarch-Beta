@@ -1,0 +1,47 @@
+name: Centralizador de APKs Nightly
+
+on:
+  schedule:
+    # Verifica de 6 em 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # Adiciona um botão "Run workflow" para você atualizar manualmente quando quiser
+
+jobs:
+  build-and-centralize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Clonar Repositório
+      uses: actions/checkout@v4
+
+    - name: Preparar Ambiente Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Instalar Requisitos
+      run: pip install requests beautifulsoup4
+
+    - name: Verificar e Coletar APKs
+      id: checker
+      run: python check_builds.py
+
+    - name: Criar Painel de Download (Release)
+      if: steps.checker.outputs.novas_builds == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.checker.outputs.tag_name }}
+        name: RetroArch Android - ${{ steps.checker.outputs.tag_name }}
+        body: |
+          ### 📱 Seus APKs Prontos para Instalação
+          Todos os arquivos gerados pelo Buildbot hoje foram centralizados aqui embaixo.
+          
+          * **Data de Coleta:** ${{ steps.checker.outputs.tag_name }}
+          * **Origem:** Repositório Oficial Libretro Nightly
+        draft: false
+        prerelease: false
+        files: |
+          downloads/*.apk
