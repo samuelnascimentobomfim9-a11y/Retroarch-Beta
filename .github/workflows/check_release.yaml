@@ -1,47 +1,55 @@
-name: Centralizador de APKs Nightly
+name: Bot Extrator e Publicador de Releases
 
 on:
   schedule:
-    # Verifica de 6 em 6 horas (00:00, 06:00, 12:00, 18:00 UTC)
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
-    # Adiciona um botão "Run workflow" para você atualizar manualmente quando quiser
+    - cron: '0 4 * * *' # Roda automaticamente todos os dias às 04:00 UTC (01:00 no horário de Brasília)
+  workflow_dispatch: # Permite que você force a execução clicando em um botão manualmente
 
 jobs:
-  build-and-centralize:
+  build-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Dá permissão necessária para o bot criar e modificar Releases
 
     steps:
-    - name: Clonar Repositório
+    - name: Checkout do código
       uses: actions/checkout@v4
 
-    - name: Preparar Ambiente Python
+    - name: Configurar o Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.x'
 
-    - name: Instalar Requisitos
-      run: pip install requests beautifulsoup4
+    - name: Instalar dependências
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4
 
-    - name: Verificar e Coletar APKs
-      id: checker
-      run: python check_builds.py
+    - name: Executar o Bot Extrator
+      run: python script.py
 
-    - name: Criar Painel de Download (Release)
-      if: steps.checker.outputs.novas_builds == 'true'
+    # Carrega a data salva pelo script Python para usar como variável de ambiente
+    - name: Definir Tag da Release
+      id: get_tag
+      run: |
+        TAG=$(cat tag_name.txt)
+        echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+
+    # Cria a Release oficial no repositório e faz o upload dos arquivos
+    - name: Criar GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ steps.checker.outputs.tag_name }}
-        name: RetroArch Android - ${{ steps.checker.outputs.tag_name }}
+        tag_name: ${{ env.RELEASE_TAG }}
+        name: Nightly Build - ${{ env.RELEASE_TAG }}
         body: |
-          ### 📱 Seus APKs Prontos para Instalação
-          Todos os arquivos gerados pelo Buildbot hoje foram centralizados aqui embaixo.
+          Compilação automatizada dos APKs do RetroArch Nightly extraídos do servidor oficial.
           
-          * **Data de Coleta:** ${{ steps.checker.outputs.tag_name }}
-          * **Origem:** Repositório Oficial Libretro Nightly
+          **Arquivos incluídos:**
+          * Universal
+          * ARM64 (64-bit)
+          * ARM32 (32-bit)
         draft: false
         prerelease: false
-        files: |
-          downloads/*.apk
+        files: apks_baixados/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
