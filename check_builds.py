@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-URL_ALVO = "https://buildbot.libretro.com/nightly/android/"
+URL_ALVO = "https://libretro.com"
 
 def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
     if not os.path.exists(pasta_destino):
@@ -24,7 +24,7 @@ def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
         href = link.get('href')
         if href and href.endswith('.apk'):
             partes = href.split('-')
-            # Garante que começa com o padrão de data AAAA-MM-DD
+            # Verifica se o início do link bate certinho com o padrão AAAA-MM-DD
             if len(partes) >= 3 and partes[0].isdigit() and partes[1].isdigit() and partes[2].isdigit():
                 arquivos_datados.append(href)
 
@@ -32,11 +32,12 @@ def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
         print("⚠️ Nenhum arquivo APK datado foi encontrado.")
         return None
 
-    # Ordena para garantir a ordem cronológica e pega a data mais recente disponível
+    # Garante a ordem e extrai a data do último arquivo disponível
     arquivos_datados.sort()
     ultima_data_str = "-".join(arquivos_datados[-1].split('-')[:3])
     print(f"📅 Data mais recente detectada no servidor: {ultima_data_str}")
 
+    # Define os três alvos solicitados com base nessa data
     alvos = {
         "universal": f"{ultima_data_str}-RetroArch.apk",
         "arm64": f"{ultima_data_str}-RetroArch_aarch64.apk",
