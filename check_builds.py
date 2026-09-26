@@ -3,7 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-URL_ALVO = "https://libretro.com"
+URL_ALVO = "https://buildbot.libretro.com/nightly/android/"
 
 def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
     if not os.path.exists(pasta_destino):
@@ -23,21 +23,23 @@ def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
     for link in soup.find_all('a'):
         href = link.get('href')
         if href and href.endswith('.apk'):
-            partes = href.split('-')
-            # Verifica se o início do link bate certinho com o padrão AAAA-MM-DD
-            if len(partes) >= 3 and partes[0].isdigit() and partes[1].isdigit() and partes[2].isdigit():
+            # Filtra arquivos que começam com o ano atual (ex: 2026-)
+            if href.startswith("2026-"):
                 arquivos_datados.append(href)
 
     if not arquivos_datados:
-        print("⚠️ Nenhum arquivo APK datado foi encontrado.")
+        print("⚠️ Nenhum arquivo APK datado de 2026 foi encontrado.")
         return None
 
-    # Garante a ordem e extrai a data do último arquivo disponível
+    # Ordena a lista para garantir a ordem cronológica e pega o último (mais recente)
     arquivos_datados.sort()
-    ultima_data_str = "-".join(arquivos_datados[-1].split('-')[:3])
+    ultimo_arquivo = arquivos_datados[-1]
+    
+    # Extrai a data cortando os primeiros 10 caracteres (padrão: AAAA-MM-DD)
+    ultima_data_str = ultimo_arquivo[:10]
     print(f"📅 Data mais recente detectada no servidor: {ultima_data_str}")
 
-    # Define os três alvos solicitados com base nessa data
+    # Define os três alvos específicos solicitados para essa data
     alvos = {
         "universal": f"{ultima_data_str}-RetroArch.apk",
         "arm64": f"{ultima_data_str}-RetroArch_aarch64.apk",
