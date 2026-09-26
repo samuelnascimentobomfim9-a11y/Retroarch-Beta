@@ -1,63 +1,77 @@
 import os
 import requests
-from datetime import datetime
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from datetime import datetime
 
-URL = "https://libretro.com"
+URL_ALVO = "https://buildbot.libretro.com/nightly/android/"
 
-def get_latest_builds():
-    # Obtém a data de hoje (Formato: AAAA-MM-DD)
-    hoje = datetime.utcnow().strftime("%Y-%m-%d")
-    print(f"Buscando atualizações de hoje ({hoje}) na central do Libretro...")
+def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
+    if not os.path.exists(pasta_destino):
+        os.makedirs(pasta_destino)
+
+    print(f"🔍 Conectando ao site: {url_pagina}...")
+    try:
+        resposta = requests.get(url_pagina)
+        resposta.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Erro ao acessar o site: {e}")
+        return None
+
+    soup = BeautifulSoup(resposta.text, 'html.parser')
     
-    response = requests.get(URL)
-    if response.status_code != 200:
-        print(f"Não foi possível acessar a página. Status: {response.status_code}")
-        return [], hoje
+    # Lista para armazenar apenas arquivos com data no nome (padrão AAAA-MM-DD-...)
+    arquivos_datados = []
     
-    soup = BeautifulSoup(response.text, 'html.parser')
-    arquivos_encontrados = []
-    
-    # Varre todos os links da página procurando os APKs do dia
-    for link in soup.find_all('a', href=True):
-        href = link['href']
-        filename = os.path.basename(href)
-        
-        # Filtra arquivos que começam com a data de hoje e terminam em .apk
-        if filename.startswith(hoje) and filename.endswith('.apk'):
-            full_url = href if href.startswith('http') else os.path.join(URL, href)
-            arquivos_encontrados.append({
-                'name': filename,
-                'url': full_url
-            })
+    for link in soup.find_all('a'):
+        href = link.get('href')
+        if href and href.endswith('.apk'):
+            # Verifica se o arquivo começa com uma estrutura de data (ex: 2026-09-26)
+            partes = href.split('-')
+            if len(partes) >= 3 and partes[0].isdigit() and len(partes[0]) == 4:
+                arquivos_datados.append(href)
+
+    if not arquivos_datados:
+        print("⚠️ Nenhum arquivo APK datado foi encontrado.")
+        return None
+
+    # Descobre qual é a data mais recente disponível na lista
+    # Como a lista é em ordem cronológica, pegamos a data do último item
+    ultima_data_str = "-".join(arquivos_datados[-1].split('-')[:3])
+    print(f"📅 Data mais recente detectada no servidor: {ultima_data_str}")
+
+    # Filtra os arquivos específicos dessa data mais recente
+    alvos = {
+        "universal": f"{ultima_data_str}-RetroArch.apk",
+        "arm64": f"{ultima_data_str}-RetroArch_aarch64.apk",
+        "arm32": f"{ultima_data_str}-RetroArch_ra32.apk"
+    }
+
+    # Baixa apenas os 3 arquivos correspondentes
+    for arquitetura, nome_arquivo in alvos.items():
+        if nome_arquivo in arquivos_datados:
+            url_download = urljoin(url_pagina, nome_arquivo)
+            caminho_salvar = os.path.join(pasta_destino, nome_arquivo)
+            print(f"⬇️ Baixando ({arquitetura}): {nome_arquivo}...")
             
-    return arquivos_encontrados, hoje
+            try:
+                with requests.get(url_download, stream=True) as r:
+                    r.raise_for_status()
+                    with open(caminho_salvar, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                print(f"✅ Download concluído: {nome_arquivo}")
+            except Exception as e:
+                print(f"❌ Erro ao baixar {nome_arquivo}: {e}")
+        else:
+            print(f"⚠️ Arquivo esperado não encontrado: {nome_arquivo}")
 
-def main():
-    builds, data_versao = get_latest_builds()
-    
-    if not builds:
-        print("Nenhuma build lançada hoje até o momento.")
-        if 'GITHUB_OUTPUT' in os.environ:
-            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-                f.write("novas_builds=false\n")
-        return
-
-    print(f"Sucesso! Encontrados {len(builds)} arquivos para centralizar. Baixando...")
-    os.makedirs("downloads", exist_ok=True)
-    
-    for build in builds:
-        print(f"-> {build['name']}")
-        r = requests.get(build['url'], stream=True)
-        if r.status_code == 200:
-            with open(f"downloads/{build['name']}", 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-    if 'GITHUB_OUTPUT' in os.environ:
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-            f.write("novas_builds=true\n")
-            f.write(f"tag_name=v{data_versao}\n")
+    # Retorna a data encontrada para ser usada como nome da Tag no GitHub Releases
+    return ultima_data_str
 
 if __name__ == "__main__":
-    main()
+    data_detectada = extrair_e_baixar_apks(URL_ALVO)
+    # Escreve a data em um arquivo temporário para o GitHub Actions ler depois
+    if data_detectada:
+        with open("tag_name.txt", "w") as f:
+            f.write(data_detectada)
