@@ -2,14 +2,14 @@ name: Bot Extrator e Publicador de Releases
 
 on:
   schedule:
-    - cron: '0 4 * * *' # Roda automaticamente todos os dias às 04:00 UTC (01:00 no horário de Brasília)
-  workflow_dispatch: # Permite que você force a execução clicando em um botão manualmente
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Dá permissão necessária para o bot criar e modificar Releases
+      contents: write
 
     steps:
     - name: Checkout do código
@@ -28,26 +28,23 @@ jobs:
     - name: Executar o Bot Extrator
       run: python script.py
 
-    # Carrega a data salva pelo script Python para usar como variável de ambiente
     - name: Definir Tag da Release
       id: get_tag
       run: |
-        TAG=$(cat tag_name.txt)
-        echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+        if [ -f tag_name.txt ]; then
+          TAG=$(cat tag_name.txt)
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+        else
+          echo "Nenhum arquivo novo para processar hoje."
+          exit 0
+        fi
 
-    # Cria a Release oficial no repositório e faz o upload dos arquivos
     - name: Criar GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ env.RELEASE_TAG }}
-        name: Nightly Build - ${{ env.RELEASE_TAG }}
-        body: |
-          Compilação automatizada dos APKs do RetroArch Nightly extraídos do servidor oficial.
-          
-          **Arquivos incluídos:**
-          * Universal
-          * ARM64 (64-bit)
-          * ARM32 (32-bit)
+        name: ${{ env.RELEASE_TAG }}
+        body: ""
         draft: false
         prerelease: false
         files: apks_baixados/*
