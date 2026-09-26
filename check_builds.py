@@ -3,72 +3,73 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-URL_ALVO = "https://buildbot.libretro.com/nightly/android/"
+TARGET_URL = "https://buildbot.libretro.com/nightly/android/"
 
-def extrair_e_baixar_apks(url_pagina, pasta_destino="apks_baixados"):
-    if not os.path.exists(pasta_destino):
-        os.makedirs(pasta_destino)
+def extract_and_download_apks(page_url, target_folder="downloaded_apks"):
+    if not os.path.exists(target_folder):
+        os.makedirs(target_folder)
 
-    print(f"🔍 Conectando ao site: {url_pagina}...")
+    print(f"Connecting to website: {page_url}...")
     try:
-        resposta = requests.get(url_pagina)
-        resposta.raise_for_status()
+        response = requests.get(page_url)
+        response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        print(f"❌ Erro ao acessar o site: {e}")
+        print(f"Error accessing website: {e}")
         return None
 
-    soup = BeautifulSoup(resposta.text, 'html.parser')
-    arquivos_datados = []
+    soup = BeautifulSoup(response.text, 'html.parser')
+    dated_files = []
     
     for link in soup.find_all('a'):
         href = link.get('href')
         if href and href.endswith('.apk'):
-            # Filtra arquivos que começam com o ano atual (ex: 2026-)
+            # Filter files starting with the current year
             if href.startswith("2026-"):
-                arquivos_datados.append(href)
+                dated_files.append(href)
 
-    if not arquivos_datados:
-        print("⚠️ Nenhum arquivo APK datado de 2026 foi encontrado.")
+    if not dated_files:
+        print("No dated APK files found for 2026.")
         return None
 
-    # Ordena a lista para garantir a ordem cronológica e pega o último (mais recente)
-    arquivos_datados.sort()
-    ultimo_arquivo = arquivos_datados[-1]
-    
-    # Extrai a data cortando os primeiros 10 caracteres (padrão: AAAA-MM-DD)
-    ultima_data_str = ultimo_arquivo[:10]
-    print(f"📅 Data mais recente detectada no servidor: {ultima_data_str}")
+    # Sort files chronologically and pick the latest one
+    dated_files.sort()
+    latest_file = dated_files[-1]
+    latest_date_str = latest_file[:10]
+    print(f"Latest build date detected: {latest_date_str}")
 
-    # Define os três alvos específicos solicitados para essa data
-    alvos = {
-        "universal": f"{ultima_data_str}-RetroArch.apk",
-        "arm64": f"{ultima_data_str}-RetroArch_aarch64.apk",
-        "arm32": f"{ultima_data_str}-RetroArch_ra32.apk"
+    # Define the three target variants requested
+    targets = {
+        "universal": f"{latest_date_str}-RetroArch.apk",
+        "arm64": f"{latest_date_str}-RetroArch_aarch64.apk",
+        "arm32": f"{latest_date_str}-RetroArch_ra32.apk"
     }
 
-    baixou_algo = False
-    for arquitetura, nome_arquivo in alvos.items():
-        url_download = urljoin(url_pagina, nome_arquivo)
-        caminho_salvar = os.path.join(pasta_destino, nome_arquivo)
-        print(f"⬇️ Baixando ({arquitetura}): {nome_arquivo}...")
+    downloaded_any = False
+    for arch, file_name in targets.items():
+        download_url = urljoin(page_url, file_name)
+        save_path = os.path.join(target_folder, file_name)
+        print(f"Downloading ({arch}): {file_name}...")
         
         try:
-            with requests.get(url_download, stream=True) as r:
+            with requests.get(download_url, stream=True) as r:
                 if r.status_code == 200:
-                    with open(caminho_salvar, 'wb') as f:
+                    with open(save_path, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
-                    print(f"✅ Download concluído: {nome_arquivo}")
-                    baixou_algo = True
+                    print(f"Successfully downloaded: {file_name}")
+                    downloaded_any = True
                 else:
-                    print(f"⚠️ Arquivo não encontrado no servidor: {nome_arquivo}")
+                    print(f"File not found on server: {file_name}")
         except Exception as e:
-            print(f"❌ Erro ao baixar {nome_arquivo}: {e}")
+            print(f"Error downloading {file_name}: {e}")
 
-    return ultima_data_str if baixou_algo else None
+    # Save tag directly to GitHub Environment file if running in Actions
+    if downloaded_any and "GITHUB_ENV" in os.environ:
+        with open(os.environ["GITHUB_ENV"], "a") as env_file:
+            env_file.write(f"RELEASE_TAG={latest_date_str}\n")
+        print(f"Saved RELEASE_TAG={latest_date_str} to GITHUB_ENV.")
+
+    return latest_date_str if downloaded_any else None
 
 if __name__ == "__main__":
-    data_detectada = extrair_e_baixar_apks(URL_ALVO)
-    if data_detectada:
-        with open("tag_name.txt", "w") as f:
-            f.write(data_detectada)
+    extract_and_download_apks(TARGET_URL)
