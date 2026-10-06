@@ -17,8 +17,6 @@ jobs:
     steps:
     - name: Checkout repository code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Garante o histórico de commits completo para ler a tag anterior
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -34,33 +32,17 @@ jobs:
       id: bot
       run: python check_builds.py
 
-    # Passo ajustado para gerar as notas de lançamento comparando com a tag anterior
-    - name: Generate Automatic Release Notes
-      if: steps.bot.outputs.tag != ''
-      id: generate_notes
-      run: |
-        NOTES=$(gh api /repos/${{ github.repository }}/releases/generate-notes \
-          -f tag_name="${{ steps.bot.outputs.tag }}" \
-          -f target_commitish="main" \
-          --jq '.body')
-        
-        echo "AUTOMATIC_CHANGELOG<<EOF" >> $GITHUB_ENV
-        echo "$NOTES" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Create and Publish GitHub Release
       if: steps.bot.outputs.tag != ''
       run: |
-        # Cria a release direto, anexando os APKs e injetando o Changelog automático no fim
-        gh release create "${{ steps.bot.outputs.tag }}" downloaded_apks/* \
-          --title "${{ steps.bot.outputs.tag }}-RetroArch" \
-          --notes "> **Commits do repositorio**: https://github.com{{ steps.bot.outputs.tag }}
+        TAG_NAME="${{ steps.bot.outputs.tag }}"
+        
+        # Cria a release pública contendo estritamente os seus links estruturados em Markdown
+        gh release create "$TAG_NAME" downloaded_apks/* \
+          --title "${TAG_NAME}-RetroArch" \
+          --notes "> **Commits do repositorio**: https://github.com
         
         - Link: **https://libretro.com**
-        - Código fonte: **https://libretro.com/latest/**
-        
-        ${{ env.AUTOMATIC_CHANGELOG }}"
+        - Código fonte: **https://libretro.comlatest/**"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
