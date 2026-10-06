@@ -18,7 +18,7 @@ jobs:
     - name: Checkout repository code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        fetch-depth: 0 # Permite que o GitHub leia o histórico para gerar as notas de lançamento
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -34,35 +34,23 @@ jobs:
       id: bot
       run: python check_builds.py
 
-    # Monta as notas lendo e limpando as variáveis de forma 100% segura sem usar chaves no echo
-    - name: Generate Release Notes File
+    # Monta os links fixos que você quer no topo das notas
+    - name: Pre-fill Release Content
       if: steps.bot.outputs.tag != ''
       run: |
-        NEW_TAG="${{ steps.bot.outputs.tag }}"
-        
-        # Pega a lista de tags e isola a anterior real de forma limpa
-        PREVIOUS_TAG=$(gh release list --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null | grep -v "^${NEW_TAG}$" | head -n 1 || echo "")
-        
-        if [ -z "$PREVIOUS_TAG" ]; then
-          PREVIOUS_TAG="v2026-09-26"
-        fi
-        
-        echo "Tag Anterior identificada: $PREVIOUS_TAG"
-        echo "Tag Nova identificada: $NEW_TAG"
-        
-        # Escreve o link completo concatenando as variáveis sem usar chaves literais no texto do echo
-        printf "> **Commits do repositorio**: https://github.com\n\n" "$PREVIOUS_TAG" "$NEW_TAG" > release_notes.txt
-        printf -- "- Link: **https://buildbot.libretro.com/nightly/android/**\n" >> release_notes.txt
-        printf -- "- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**\n" >> release_notes.txt
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        echo "- Link: **https://libretro.com**" > release_notes.txt
+        echo "- Código fonte: **https://libretro.comlatest/**" >> release_notes.txt
+        echo "" >> release_notes.txt
 
     - name: Create and Publish GitHub Release
       if: steps.bot.outputs.tag != ''
       run: |
         NEW_TAG="${{ steps.bot.outputs.tag }}"
+        
+        # O parâmetro --generate-notes cria automaticamente a seção "Full Changelog" nativa no fim do texto
         gh release create "$NEW_TAG" downloaded_apks/* \
           --title "${NEW_TAG}-RetroArch" \
-          --notes-file release_notes.txt
+          --notes-file release_notes.txt \
+          --generate-notes
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
