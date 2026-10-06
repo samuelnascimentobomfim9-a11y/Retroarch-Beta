@@ -18,7 +18,7 @@ jobs:
     - name: Checkout repository code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0
+        fetch-depth: 0 # Carrega o histórico completo para a busca de tags funcionar
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -34,18 +34,24 @@ jobs:
       id: bot
       run: python check_builds.py
 
-    # Passo corrigido utilizando a variável nativa $GITHUB_REPOSITORY para evitar links quebrados
     - name: Generate Release Notes File
       if: steps.bot.outputs.tag != ''
       run: |
         NEW_TAG="${{ steps.bot.outputs.tag }}"
-        PREVIOUS_TAG=$(gh release list --limit 1 --json tagName --jq '..tagName' 2>/dev/null || echo "")
         
-        if [ -z "$PREVIOUS_TAG" ] || [ "$PREVIOUS_TAG" = "$NEW_TAG" ]; then
+        # Pega a lista das últimas tags e filtra para extrair a anterior real (pulando a nova)
+        PREVIOUS_TAG=$(gh release list --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null | grep -v "^${NEW_TAG}$" | head -n 1 || echo "")
+        
+        # Caso seja a primeira build do repositório e não exista anterior, define a tag base de segurança
+        if [ -z "$PREVIOUS_TAG" ]; then
           PREVIOUS_TAG="v2026-09-26"
         fi
         
-        echo "> **Commits do repositorio**: https://github.com{GITHUB_REPOSITORY}/compare/${PREVIOUS_TAG}...${NEW_TAG}" > release_notes.txt
+        echo "Tag Anterior encontrada: $PREVIOUS_TAG"
+        echo "Tag Atual encontrada: $NEW_TAG"
+        
+        # Monta o arquivo de notas com o espaçamento e os links corretos da Libretro
+        echo "> **Commits do repositorio**: https://github.com{PREVIOUS_TAG}...${NEW_TAG}" > release_notes.txt
         echo "" >> release_notes.txt
         echo "- Link: **https://buildbot.libretro.com/nightly/android/**" >> release_notes.txt
         echo "- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**" >> release_notes.txt
