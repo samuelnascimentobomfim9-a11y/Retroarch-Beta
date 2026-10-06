@@ -25,18 +25,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
+    # Ajustado para executar o arquivo correto do seu repositório
     - name: Run APK Extractor Bot
-      run: python script.py
+      run: python check_builds.py
 
-    - name: Create GitHub Release
+    - name: Create and Publish GitHub Release
       if: env.RELEASE_TAG != ''
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ env.RELEASE_TAG }}
-        name: ${{ env.RELEASE_TAG }}
-        body: ""
-        draft: false
-        prerelease: false
-        files: downloaded_apks/*
+      run: |
+        gh release delete "${{ env.RELEASE_TAG }}" --yes || true
+        
+        gh release create "${{ env.RELEASE_TAG }}" downloaded_apks/* \
+          --title "${{ env.RELEASE_TAG }}" \
+          --notes "Automated nightly build."
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
