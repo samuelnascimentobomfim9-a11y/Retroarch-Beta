@@ -34,27 +34,28 @@ jobs:
       id: bot
       run: python check_builds.py
 
-    - name: Create and Publish GitHub Release
+    # Passo seguro que cria o texto sem usar blocos de comandos complexos no Linux
+    - name: Generate Release Notes File
       if: steps.bot.outputs.tag != ''
       run: |
         NEW_TAG="${{ steps.bot.outputs.tag }}"
-        
-        # Busca dinamicamente o nome da última tag lançada antes desta execução
         PREVIOUS_TAG=$(gh release list --limit 1 --json tagName --jq '..tagName' 2>/dev/null || echo "")
         
         if [ -z "$PREVIOUS_TAG" ] || [ "$PREVIOUS_TAG" = "$NEW_TAG" ]; then
           PREVIOUS_TAG="v2026-09-26"
         fi
         
-        # Cria o arquivo de notas de forma blindada, sem risco do Linux cortar ou errar as barras
-        cat << EOF > release_notes.txt
-> **Commits do repositorio**: https://github.com{{ github.repository }}/compare/${PREVIOUS_TAG}...${NEW_TAG}
+        echo "> **Commits do repositorio**: https://github.com{{ github.repository }}/compare/${PREVIOUS_TAG}...${NEW_TAG}" > release_notes.txt
+        echo "" >> release_notes.txt
+        echo "- Link: **https://buildbot.libretro.com/nightly/android/**" >> release_notes.txt
+        echo "- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**" >> release_notes.txt
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-- Link: **https://buildbot.libretro.com/nightly/android/**
-- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**
-EOF
-
-        # Publica a release oficial aplicando as notas limpas e exatas do arquivo
+    - name: Create and Publish GitHub Release
+      if: steps.bot.outputs.tag != ''
+      run: |
+        NEW_TAG="${{ steps.bot.outputs.tag }}"
         gh release create "$NEW_TAG" downloaded_apks/* \
           --title "${NEW_TAG}-RetroArch" \
           --notes-file release_notes.txt
