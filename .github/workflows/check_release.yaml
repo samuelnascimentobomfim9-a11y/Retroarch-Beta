@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: Checkout repository code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -35,14 +37,24 @@ jobs:
     - name: Create and Publish GitHub Release
       if: steps.bot.outputs.tag != ''
       run: |
-        TAG_NAME="${{ steps.bot.outputs.tag }}"
+        NEW_TAG="${{ steps.bot.outputs.tag }}"
         
-        # Cria a release pública contendo estritamente os seus links estruturados em Markdown
-        gh release create "$TAG_NAME" downloaded_apks/* \
-          --title "${TAG_NAME}-RetroArch" \
-          --notes "> **Commits do repositorio**: https://github.com
+        # Busca dinamicamente o nome da última tag antes desta execução
+        PREVIOUS_TAG=$(gh release list --limit 1 --json tagName --jq '..tagName' 2>/dev/null || echo "")
         
-        - Link: **https://libretro.com**
-        - Código fonte: **https://libretro.comlatest/**"
+        if [ -z "$PREVIOUS_TAG" ] || [ "$PREVIOUS_TAG" = "$NEW_TAG" ]; then
+          PREVIOUS_TAG="v2026-09-26"
+        fi
+        
+        # Cria as notas com o texto limpo e o espaçamento correto
+        echo "> **Commits do repositorio**: https://github.com{{ github.repository }}/compare/${PREVIOUS_TAG}...${NEW_TAG}" > release_notes.txt
+        echo "" >> release_notes.txt
+        echo "- Link: **https://libretro.com**" >> release_notes.txt
+        echo "- Código fonte: **https://libretro.comlatest/**" >> release_notes.txt
+        
+        # Publica a release oficial sem nenhuma aspa no texto
+        gh release create "$NEW_TAG" downloaded_apks/* \
+          --title "${NEW_TAG}-RetroArch" \
+          --notes-file release_notes.txt
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
