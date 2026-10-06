@@ -1,8 +1,11 @@
 name: APK Extractor and Release Publisher
 
 on:
+  push:
+    branches:
+      - main
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 15 * * *' # Roda todos os dias às 15:00 UTC (12:00 no Horário de Brasília)
   workflow_dispatch:
 
 jobs:
@@ -25,17 +28,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
-    # Ajustado para executar o arquivo correto do seu repositório
     - name: Run APK Extractor Bot
+      id: bot
       run: python check_builds.py
 
     - name: Create and Publish GitHub Release
-      if: env.RELEASE_TAG != ''
+      if: steps.bot.outputs.tag != ''
       run: |
-        gh release delete "${{ env.RELEASE_TAG }}" --yes || true
+        gh release delete "${{ steps.bot.outputs.tag }}" --yes || true
         
-        gh release create "${{ env.RELEASE_TAG }}" downloaded_apks/* \
-          --title "${{ env.RELEASE_TAG }}" \
+        gh release create "${{ steps.bot.outputs.tag }}" downloaded_apks/* \
+          --title "${{ steps.bot.outputs.tag }}" \
           --notes "Automated nightly build."
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
