@@ -18,7 +18,7 @@ jobs:
     - name: Checkout repository code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0 # Carrega o histórico completo para a busca de tags funcionar
+        fetch-depth: 0
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -34,27 +34,26 @@ jobs:
       id: bot
       run: python check_builds.py
 
+    # Monta as notas lendo e limpando as variáveis de forma 100% segura sem usar chaves no echo
     - name: Generate Release Notes File
       if: steps.bot.outputs.tag != ''
       run: |
         NEW_TAG="${{ steps.bot.outputs.tag }}"
         
-        # Pega a lista das últimas tags e filtra para extrair a anterior real (pulando a nova)
+        # Pega a lista de tags e isola a anterior real de forma limpa
         PREVIOUS_TAG=$(gh release list --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null | grep -v "^${NEW_TAG}$" | head -n 1 || echo "")
         
-        # Caso seja a primeira build do repositório e não exista anterior, define a tag base de segurança
         if [ -z "$PREVIOUS_TAG" ]; then
           PREVIOUS_TAG="v2026-09-26"
         fi
         
-        echo "Tag Anterior encontrada: $PREVIOUS_TAG"
-        echo "Tag Atual encontrada: $NEW_TAG"
+        echo "Tag Anterior identificada: $PREVIOUS_TAG"
+        echo "Tag Nova identificada: $NEW_TAG"
         
-        # Monta o arquivo de notas com o espaçamento e os links corretos da Libretro
-        echo "> **Commits do repositorio**: https://github.com{PREVIOUS_TAG}...${NEW_TAG}" > release_notes.txt
-        echo "" >> release_notes.txt
-        echo "- Link: **https://buildbot.libretro.com/nightly/android/**" >> release_notes.txt
-        echo "- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**" >> release_notes.txt
+        # Escreve o link completo concatenando as variáveis sem usar chaves literais no texto do echo
+        printf "> **Commits do repositorio**: https://github.com\n\n" "$PREVIOUS_TAG" "$NEW_TAG" > release_notes.txt
+        printf -- "- Link: **https://buildbot.libretro.com/nightly/android/**\n" >> release_notes.txt
+        printf -- "- Código fonte: **https://buildbot.libretro.com/nightly/android/latest/**\n" >> release_notes.txt
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
