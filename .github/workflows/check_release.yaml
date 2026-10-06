@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 15 * * *' # Roda todos os dias às 15:00 UTC (12:00 no Horário de Brasília)
+    - cron: '0 15 * * *' # Roda todos os dias às 12:00 (Meio-dia no Horário de Brasília)
   workflow_dispatch:
 
 jobs:
@@ -17,6 +17,8 @@ jobs:
     steps:
     - name: Checkout repository code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Necessário para buscar o histórico de commits e gerar o Changelog
 
     - name: Set up Python environment
       uses: actions/setup-python@v5
@@ -32,13 +34,37 @@ jobs:
       id: bot
       run: python check_builds.py
 
+    # Passo extra para gerar as notas automáticas nativas do GitHub baseadas nos commits
+    - name: Generate Automatic Release Notes
+      if: steps.bot.outputs.tag != ''
+      id: generate_notes
+      run: |
+        # Solicita ao GitHub a geração automática do Changelog de commits para essa tag
+        NOTES=$(gh api /repos/${{ github.repository }}/releases/generate-notes \
+          -f tag_name="${{ steps.bot.outputs.tag }}" \
+          -f target_commitish="main" \
+          --jq '.body')
+        
+        # Salva o resultado temporariamente mantendo as quebras de linha corretas
+        echo "AUTOMATIC_CHANGELOG<<EOF" >> $GITHUB_ENV
+        echo "$NOTES" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Create and Publish GitHub Release
       if: steps.bot.outputs.tag != ''
       run: |
         gh release delete "${{ steps.bot.outputs.tag }}" --yes || true
         
+        # Monta a estrutura da nota combinando o seu texto fixo com o changelog automático embaixo
         gh release create "${{ steps.bot.outputs.tag }}" downloaded_apks/* \
-          --title "${{ steps.bot.outputs.tag }}" \
-          --notes "Automated nightly build."
+          --title "${{ steps.bot.outputs.tag }}-RetroArch" \
+          --notes "> **Commits do repositorio**: https://github.com{{ steps.bot.outputs.tag }}
+        
+        - Link: **https://buildbot.libretro.com/nightly/android/**
+        - Código fonte: **https://libretro.com**
+        
+        ${{ env.AUTOMATIC_CHANGELOG }}"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
